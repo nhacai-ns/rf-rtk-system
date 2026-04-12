@@ -1,0 +1,85 @@
+# =========================
+# Arduino / STM32Duino build files
+# =========================
+*.ino.cpp
+*.ino.cpp.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.o
+*.a
+*.d
+
+# Build folders
+/build/
+/build-*/
+out/
+Release/
+Debug/
+
+# Temporary files
+*.tmp
+*.temp
+
+# =========================
+# STM32 / ARM artifacts
+# =========================
+*.axf
+*.srec
+*.su
+*.idb
+*.pdb
+
+# Linker / compiler logs
+*.log
+
+# =========================
+# Arduino IDE config
+# =========================
+*.arduino.json
+
+# =========================
+# VSCode
+# =========================
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# =========================
+# PlatformIO
+# =========================
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# =========================
+# Libraries
+# =========================
+
+lib/*
+libraries/*
+
+!lib/custom_lib/
+!libraries/custom_driver/
+
+# =========================
+secrets.h
+config.h
+
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Backup files
+# =========================
+*.bak
+*.old
+*~
+
+# =========================
+# Upload/cache
+# =========================
+*.upload
