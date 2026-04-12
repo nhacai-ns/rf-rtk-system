@@ -12,7 +12,6 @@
 
 #include <ArduinoJson.h>
 #include <Arduino.h>
-#include <cppQueue.h>
 #include <utility/w5100.h>
 #include "IWatchdog.h"
 #include "stm32f4xx_hal.h"

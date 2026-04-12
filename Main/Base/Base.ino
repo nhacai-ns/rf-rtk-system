@@ -35,9 +35,6 @@ volatile uint32_t last_server_ping_ms = 0;
 HardwareTimer *StatusTimer;
 volatile uint32_t system_ticks = 0;
 
-cppQueue reportQueue(sizeof(RF_Rover_Report), 10, FIFO);
-cppQueue priorityQueue(sizeof(RF_Rover_Report), 5, FIFO);
-
 RF_Rover_Report ROVER_LIST[MAX_ROVER] = {0};
 int8_t ROVER_MODE[MAX_ROVER] = { -1 };
 
@@ -437,10 +434,6 @@ void process_rf_receive()
 
           send_single_to_rover(button_response);
 
-          if (!priorityQueue.isFull()) {
-            priorityQueue.push(&temp_rpt);
-          }
-
           send_to_server();
         }
 
@@ -608,7 +601,6 @@ void send_single_to_rover(RF_RTCM_Chunk pkt)
 void send_report_to_server() {
   if (millis() - last_eth_report_send > 1000) {
     last_eth_report_send = millis();
-    // if (!priorityQueue.isEmpty()) return;
     send_to_server();
   }
 }
