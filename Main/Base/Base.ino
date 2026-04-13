@@ -42,8 +42,16 @@ bool is_in_config_mode = false;
 
 volatile bool loop_ok = false, rf_ok = false, udp_ok = false;
 
+CONFIG_STATE cfg_state = CFG_IDLE;
+
+String cfg_cmd = "";
+uint32_t cfg_start_time = 0;
+std::deque<String> cfg_queue;
+String cfg_response = "";
+volatile bool cfg_force_exit = false;
+
 void setup() {
-  SerialLog.begin(115200);
+  SerialLog.begin(SERIAL_LOG_BAUDRATE);
   SerialLog.println("System Booting...");
 
   ROVERS_INIT();  
@@ -54,10 +62,6 @@ void setup() {
 #ifdef LAN
   LAN_Init();
 #endif
-
-// #ifdef CONFIG_RTK_
-//   setup_rtk_um980_base();
-// #endif
 
   IWatchdog.begin(WATCHDOG_TIME); // 10s timeout
 
@@ -75,7 +79,7 @@ void loop() {
   if (!is_in_config_mode)
   {
 #ifdef LAN
-    on_server_cmd();
+    //on_server_cmd();
 #endif
     process_rf_receive();
 
@@ -257,6 +261,7 @@ void check_config_mode() {
   }
 }
 
+/*
 void check_config_mode_udp() {
   int packetSize = Udp.parsePacket();
   if (packetSize) {
@@ -322,6 +327,7 @@ void check_config_mode_udp() {
     }
   }
 }
+*/
 
 void check_watch_dog(){
   static uint32_t lastCheck = 0;
@@ -759,82 +765,191 @@ void send_to_server() {
   udp_ok = true;
 }
 
-// void check_server_packet() {
-//   int packetSize = Udp.parsePacket();
-//   if (packetSize) {
-//     char remoteBuffer[128]; // Buffer đủ dùng cho JSON ngắn
-//     int len = Udp.read(remoteBuffer, sizeof(remoteBuffer) - 1);
+void process_config_mode() {
+  if (!is_in_config_mode) return;
+  
+  if (cfg_force_exit) {
 
-//     if (len > 0) {
-//       remoteBuffer[len] = '\0';
-//     else 
-//       return;
+    is_in_config_mode = false;
+    cfg_state = CFG_IDLE;
+    cfg_queue.clear();
+    cfg_response = "";
+    cfg_force_exit = false;
 
-// #ifdef DEBUG_
-//       SerialLog.print("LAN cmd: ");
-//       SerialLog.println(remoteBuffer);
-// #endif
-//   on_server_config
-// }
+    // flush UART
+    uint8_t c;
+    while (UART_Read(&c, 1) > 0);
 
-// void on_server_config(char* remoteBuffer){
-//   String input = String(remoteBuffer);
-//   input.trim();
+    Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+    Udp.println("--- EXIT CONFIG MODE ---");
+    Udp.endPacket();
 
-//   // 1. Kiểm tra lệnh bắt đầu Config
-//   if (input == CONFIG_START) {
-//     is_in_config_mode = true; // Cần khai báo biến toàn cục bool is_in_config_mode
-//     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-//     Udp.write("--- ENTERED CONFIG MODE ---\r\n");
-//     Udp.endPacket();
-//     last_udp_config = millis();
-//     return;
-//   }
+#ifdef DEBUG
+    SerialLog.println("[CFG] Force exit");
+#endif
+    return;
+  }
 
-//   // 2. Nếu đang trong chế độ Config
-//   if (is_in_config_mode) {
-//     if (input == CONFIG_END || millis() - last_udp_config > CONFIG_TIMEOUT * 2) {
-//       is_in_config_mode = false;
-//       Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-//       Udp.write("--- EXIT CONFIG MODE ---\r\n");
-//       Udp.endPacket();
-//       return;
-//     }
+  if (millis() - last_udp_config > CONFIG_TIMEOUT * 2) {
+    is_in_config_mode = false;
+    cfg_state = CFG_IDLE;
+    cfg_queue.clear();
+    cfg_response = "";
 
-//     // Gửi lệnh nhận được từ UDP sang UM980
-//     UART_Write_Queue((uint8_t*)input.c_str(), input.length());
-//     UART_Write_Queue((uint8_t*)"\r\n", 2);
+    Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+    Udp.println("--- EXIT CONFIG MODE (TIMEOUT) ---");
+    Udp.endPacket();
 
-//     // Đợi phản hồi từ UM980
-//     uint32_t start_time = millis();
-//     bool is_ok = false;
-//     const char* p_match = "OK"; 
-//     String full_res = "";
+    return;
+  }
 
-//     while (millis() - start_time < CONFIG_TIME_OUT_MS) {
-//       UART_DMA_Process_TX();
-//       uint8_t c;
-//       if (UART_Read(&c, 1) > 0) {
-//         full_res += (char)c;
-//         if (c == *p_match) {
-//           p_match++;
-//           if (*p_match == '\0') { is_ok = true; break; }
-//         } else { p_match = "OK"; }
-//       }
-//       yield();
-//     }
+  switch (cfg_state) {
+    case CFG_IDLE:
+      if (!cfg_queue.empty()) {
+        cfg_cmd = cfg_queue.front();
+        cfg_queue.pop_front();
+        cfg_state = CFG_SEND_CMD;
+      }
+      break;
+    case CFG_SEND_CMD:
+      UART_Write_Queue((uint8_t*)cfg_cmd.c_str(), cfg_cmd.length());
+      UART_Write_Queue((uint8_t*)"\r\n", 2);
 
-//     // Phản hồi kết quả lại cho Client qua UDP
-//     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-//     if (is_ok) {
-//       Udp.println("-> UM: " + input + " -> OK");
-//     } else {
-//       Udp.println("-> UM: " + input + " -> FAIL (Timeout)");
-//     }
-//     Udp.endPacket();
-//   }
-// }
+#ifdef DEBUG
+      SerialLog.print("[CFG SEND] "); SerialLog.println(cfg_cmd);
+#endif
 
+      cfg_start_time = millis();
+      cfg_response = "";
+      cfg_state = CFG_WAIT_RESP;
+      break;
+    case CFG_WAIT_RESP: {
+      UART_DMA_Process_TX();
+
+      uint8_t c;
+      while (UART_Read(&c, 1) > 0) {
+        cfg_response += (char)c;
+
+        // avoid overflow
+        if (cfg_response.length() > 512) {
+          cfg_response.remove(0, 128);
+        }
+      }
+
+      if (millis() - cfg_start_time > CONFIG_TIME_OUT_MS) {
+        Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+        Udp.print("-> UM cmd: " + cfg_cmd);
+        Udp.print(", response: ");
+        Udp.println(cfg_response);
+        Udp.endPacket();
+#ifdef DEBUG
+        SerialLog.println("[CFG RESP]"); SerialLog.println(cfg_response);
+#endif
+        cfg_state = CFG_IDLE;
+      }
+      break;
+    }
+  }
+}
+
+void handle_udp() {
+  int packetSize = Udp.parsePacket();
+  if (!packetSize) return;
+
+  char remoteBuffer[256];
+  int len = Udp.read(remoteBuffer, sizeof(remoteBuffer) - 1);
+  if (len <= 0) return;
+  remoteBuffer[len] = '\0';
+#ifdef DEBUG
+  SerialLog.print("UDP RX: ");
+  SerialLog.println(remoteBuffer);
+#endif
+
+  String input = String(remoteBuffer);
+  input.trim();
+
+  IPAddress cfg_remote_ip = Udp.remoteIP();
+  uint16_t cfg_remote_port = Udp.remotePort();
+
+  if (input == CONFIG_START) {
+    is_in_config_mode = true;
+    cfg_force_exit = false;
+
+    cfg_queue.clear();
+    cfg_state = CFG_IDLE;
+
+    Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
+    Udp.println("--- ENTERED CONFIG MODE ---");
+    Udp.endPacket();
+
+    last_udp_config = millis();
+    return;
+  }
+
+  if (is_in_config_mode) {
+    if (input == CONFIG_END) {
+      cfg_force_exit = true;
+      Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
+      Udp.println("--- EXIT REQUESTED ---");
+      Udp.endPacket();
+
+      return;
+    }
+    // queue command
+    if (cfg_queue.size() < CFG_QUEUE_MAX) {
+      cfg_queue.push_back(input);
+      Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
+      Udp.println("Queued: " + input);
+      Udp.endPacket();
+    } else {
+      Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
+      Udp.println("Queue FULL!");
+      Udp.endPacket();
+    }
+
+    last_udp_config = millis();
+    return;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, remoteBuffer);
+
+  if (error) {
+#ifdef DEBUG
+    SerialLog.println("JSON parse error");
+#endif
+    return;
+  }
+
+  if (doc.is<JsonArray>()) {
+    JsonArray cmd_list = doc.as<JsonArray>();
+    for (JsonObject item : cmd_list) {
+      int type = item["type"];
+      int dev_id = item["device_id"];
+      switch (type) {
+        case TYPE_NOTI: {
+          RF_RTCM_Chunk rf_pkt;
+          rf_pkt.device_id = dev_id;
+          rf_pkt.type = TYPE_NOTI;
+          rf_pkt.batch_id = 1;
+          rf_pkt.seq = 0;
+          rf_pkt.total = 1;
+          rf_pkt.data[0] = 1;
+          send_single_to_rover(rf_pkt);
+          break;
+        }
+        case TYPE_PING:
+          last_server_ping_ms = millis();
+          break;
+        default:
+          break;
+      }
+      delayMicroseconds(DELAY_CHUNK_MICRO);
+    }
+  }
+}
+
+/*
 void on_server_cmd() {
   int packetSize = Udp.parsePacket();
   if (packetSize) {
@@ -878,6 +993,7 @@ void on_server_cmd() {
     }
   }
 }
+*/
 
 void Timer_Init() {
   StatusTimer = new HardwareTimer(STATUS_TIMER);

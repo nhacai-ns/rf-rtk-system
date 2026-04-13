@@ -13,6 +13,7 @@
 #include <ArduinoJson.h>
 #include <Arduino.h>
 #include <utility/w5100.h>
+#include <deque>
 #include "IWatchdog.h"
 #include "stm32f4xx_hal.h"
 
@@ -65,6 +66,7 @@
 #define UDP_PAYLOAD_BUFF_SIZE 256
 #define TX_STORAGE_SIZE 2048 
 #define DMA_TX_TEMP_SIZE    1024  // Buffer tạm cho mỗi lần DMA bắn đi
+#define SERIAL_LOG_BAUDRATE 115200
 
 // timer
 #define STATUS_TIMER TIM3
@@ -88,6 +90,8 @@
 #define CONFIG_TIMEOUT 60000
 
 #define WATCHDOG_TIME 10000000
+
+#define CFG_QUEUE_MAX 10
 
 const uint8_t CLIENT_ADDRESS[] = { 10, 2, 132, 179 };
 // const uint8_t SERVER_ADDRESS[] = { 113, 160, 247, 168 };
@@ -141,6 +145,12 @@ enum TYPE_Packet_Enum {
 enum STATUS_Enum {
   STATUS_DISCONNECT,
   STATUS_CONNECT,
+};
+
+enum CONFIG_STATE {
+  CFG_IDLE,
+  CFG_SEND_CMD,
+  CFG_WAIT_RESP
 };
 
 

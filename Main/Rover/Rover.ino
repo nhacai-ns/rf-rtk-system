@@ -82,7 +82,7 @@ void loop() {
   {
     if (millis() - last_low_battery_beep > LAST_CHECK_BATTERY) {
       last_low_battery_beep = millis();
-      trigger_buzzer(2, BUZZER_NOTI_FREQ);
+      trigger_buzzer(1, BUZZER_NOTI_FREQ);
     }
   }
 
