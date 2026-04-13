@@ -4,16 +4,16 @@ UART_HandleTypeDef* huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
-// --- BIẾN CHO RECEIVE (RX) ---
+// --- RECEIVE (RX) ---
 static uint8_t rx_buffer[UART_RX_BUFFER_SIZE];
 static volatile uint16_t old_pos = 0;
 volatile bool uart_idle_flag = false;
 volatile uint16_t uart_rx_len = 0;
 static uint16_t last_size = 0;
 
-// --- BIẾN CHO TRANSMIT (TX) ---
-static uint8_t tx_storage[TX_STORAGE_SIZE];      // Ring buffer lưu trữ
-static uint8_t dma_active_buffer[1024]; // Buffer cho DMA
+// --- TRANSMIT (TX) ---
+static uint8_t tx_storage[TX_STORAGE_SIZE];      // Ring buffer
+static uint8_t dma_active_buffer[1024]; // Buffer for DMA
 static volatile uint16_t head = 0;
 static volatile uint16_t tail = 0;
 
@@ -45,7 +45,7 @@ void UART_DMA_Init() {
     huart2->Init.OverSampling = UART_OVERSAMPLING_16;
     HAL_UART_Init(huart2);
 
-    // 2. Cấu hình DMA RX (Stream 5) - Circular
+    // DMA RX (Stream 5) - Circular
     hdma_usart2_rx.Instance = DMA1_Stream5;
     hdma_usart2_rx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -58,7 +58,7 @@ void UART_DMA_Init() {
     if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK) {}   
     __HAL_LINKDMA(huart2, hdmarx, hdma_usart2_rx);
 
-    // 3. Cấu hình DMA TX (Stream 6) - Normal
+    //DMA TX (Stream 6) - Normal
     hdma_usart2_tx.Instance = DMA1_Stream6;
     hdma_usart2_tx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart2_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
@@ -71,16 +71,15 @@ void UART_DMA_Init() {
     if (HAL_DMA_Init(&hdma_usart2_tx) != HAL_OK) {}
     __HAL_LINKDMA(huart2, hdmatx, hdma_usart2_tx);
 
-    // Tắt các ngắt không cần thiết để loop xử lý thủ công cho ổn định
+    // turn of unnecessary IT
     __HAL_DMA_DISABLE_IT(&hdma_usart2_tx, DMA_IT_HT | DMA_IT_TC | DMA_IT_TE);
     __HAL_DMA_CLEAR_FLAG(&hdma_usart2_tx, DMA_FLAG_TCIF2_6 | DMA_FLAG_HTIF2_6);
 
-    // 4. Start Receive To Idle
+    // start receive to idle
     HAL_UARTEx_ReceiveToIdle_DMA(huart2, rx_buffer, UART_RX_BUFFER_SIZE);
     __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
 }
 
-// --- HÀM XỬ LÝ TX (GỬI ĐI) ---
 void UART_Write_Queue(uint8_t *pData, uint16_t Size) {
     for (uint16_t i = 0; i < Size; i++) {
         uint16_t next = (head + 1) % TX_STORAGE_SIZE;
@@ -92,14 +91,11 @@ void UART_Write_Queue(uint8_t *pData, uint16_t Size) {
 }
 
 void UART_DMA_Process_TX() {
-    // Chỉ bắt đầu gửi nếu DMA TX đang rảnh (không bật cờ EN)
     if (!(DMA1_Stream6->CR & DMA_SxCR_EN)) {
-        // Xóa cờ hoàn tất cũ
         DMA1->HIFCR = DMA_HIFCR_CTCIF6 | DMA_HIFCR_CHTIF6;
 
         if (head != tail) {
             uint16_t count = 0;
-            // Copy dữ liệu từ Ring Buffer sang Buffer DMA tạm
             while (head != tail && count < DMA_TX_TEMP_SIZE) {
                 dma_active_buffer[count++] = tx_storage[tail];
                 tail = (tail + 1) % TX_STORAGE_SIZE;
@@ -119,7 +115,6 @@ void UART_DMA_Process_TX() {
     }
 }
 
-// --- HÀM XỬ LÝ RX (ĐỌC VỀ) ---
 uint16_t UART_Read(uint8_t *dest, uint16_t maxlen) {
     uint16_t pos = UART_RX_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(huart2->hdmarx);
     uint16_t len = 0;
