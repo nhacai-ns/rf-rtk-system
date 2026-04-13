@@ -78,9 +78,6 @@ void loop() {
 
   if (!is_in_config_mode)
   {
-#ifdef LAN
-    //on_server_cmd();
-#endif
     process_rf_receive();
 
     get_and_aggregate_rtcm();
@@ -91,6 +88,13 @@ void loop() {
 
     check_connection_status();
   }
+  else {
+    process_config_mode();
+  }
+#ifdef LAN
+    //on_server_cmd();
+  handle_udp();
+#endif
 
   check_watch_dog();
 }
@@ -419,11 +423,12 @@ void process_rf_receive()
     radio.whatHappened(tx_ok, tx_fail, rx_ready);
 
     if (rx_ready) {
+      SerialLog.println("Direction!");
       uint8_t limit = 0;
       RF_Rover_Report temp_rpt;
       while (radio.available() && limit < 5) {
         radio.read(&temp_rpt, sizeof(temp_rpt));
-#ifdef DEBUG
+#ifdef DEBUG_
         if (temp_rpt.type == TYPE_REPORT)  {
           SerialLog.println("Direction!");
         }
@@ -607,6 +612,7 @@ void send_single_to_rover(RF_RTCM_Chunk pkt)
 void send_report_to_server() {
   if (millis() - last_eth_report_send > 1000) {
     last_eth_report_send = millis();
+    
     send_to_server();
   }
 }
@@ -766,8 +772,9 @@ void send_to_server() {
 }
 
 void process_config_mode() {
-  if (!is_in_config_mode) return;
-  
+  loop_ok = rf_ok = udp_ok = true;
+  check_watch_dog();
+
   if (cfg_force_exit) {
 
     is_in_config_mode = false;
@@ -783,6 +790,8 @@ void process_config_mode() {
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
     Udp.println("--- EXIT CONFIG MODE ---");
     Udp.endPacket();
+    
+    loop_ok = rf_ok = udp_ok = false;
 
 #ifdef DEBUG
     SerialLog.println("[CFG] Force exit");
@@ -799,7 +808,7 @@ void process_config_mode() {
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
     Udp.println("--- EXIT CONFIG MODE (TIMEOUT) ---");
     Udp.endPacket();
-
+    loop_ok = rf_ok = udp_ok = false;
     return;
   }
 
@@ -828,19 +837,37 @@ void process_config_mode() {
 
       uint8_t c;
       while (UART_Read(&c, 1) > 0) {
-        cfg_response += (char)c;
+        if (c >= 32 && c <= 126) {
+          cfg_response += (char)c;
+        }
+        else if (c == '\r' || c == '\n') {
+          cfg_response += (char)c;
+        }
 
         // avoid overflow
         if (cfg_response.length() > 512) {
           cfg_response.remove(0, 128);
         }
       }
+      int start = cfg_response.indexOf("$command");
 
+
+      String filtered = cfg_response;
+
+      int idx = filtered.indexOf("$command");
+
+      if (idx >= 0) {
+        filtered = filtered.substring(idx);
+      } else {
+        // nếu không có $command → có thể giữ nguyên hoặc bỏ
+        filtered = "[NO VALID COMMAND RESPONSE]\n" + filtered;
+      }
+        
       if (millis() - cfg_start_time > CONFIG_TIME_OUT_MS) {
         Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
         Udp.print("-> UM cmd: " + cfg_cmd);
         Udp.print(", response: ");
-        Udp.println(cfg_response);
+        Udp.println(filtered);
         Udp.endPacket();
 #ifdef DEBUG
         SerialLog.println("[CFG RESP]"); SerialLog.println(cfg_response);
