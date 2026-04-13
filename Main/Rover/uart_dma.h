@@ -3,7 +3,6 @@
 #define UART_DMA_H
 
 #include "configs.h"
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
