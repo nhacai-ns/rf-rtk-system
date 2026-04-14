@@ -42,7 +42,7 @@ def check_timeout_loop():
             for rid in list(rover_last_seen.keys()):
                 dt = now - rover_last_seen[rid]
 
-                if dt > 30:
+                if dt > 20:
                     if rover_state.get(rid) != "DISCONNECTED":
                         rover_state[rid] = "DISCONNECTED"
                         print(f"🔴 Rover {rid} DISCONNECTED (>30s)")
@@ -104,7 +104,7 @@ def receive_thread():
                 device_id = payload.get("device_id", "Unknown")
                 print(f"\n[{timestamp}] Single Packet from {addr[0]} (Dev {device_id}): {payload}")
 
-            print("\nEnter 'q' to notify or message: ", end="", flush=True)
+            print("\nEnter number 1 - 5 to notify or message: ", end="", flush=True)
             
         except Exception as e:
             print(f"\n[Parse Error]: {e}")
@@ -113,7 +113,7 @@ def ping_loop():
     while True:
         if last_rover_addr:
             try:
-                ping_cmd = {"device_id": 0, "type": TYPE_PING, "data": "SERVER_ALIVE"}
+                ping_cmd = [{"device_id": 0, "type": TYPE_PING, "data": "SERVER_ALIVE"}]
                 sock.sendto(json.dumps(ping_cmd).encode('utf-8'), last_rover_addr)
             except: pass
         time.sleep(10)
@@ -125,17 +125,46 @@ threading.Thread(target=ping_loop, daemon=True).start()
 
 while True:
     try:
-        user_input = input().strip()
+        user_input = input("\nInput ID list (Ex: 1 3 5) or 'q' to exit: ").strip()
+        
         if not last_rover_addr:
-            print("Wait for Base connection...")
+            print("No connection from Base...")
             continue
-
+        
         if user_input.lower() == 'q':
-            command = {"device_id": 1, "type": TYPE_NOTI, "data": "OUT_OF_SAFE_ZONE"}
-        else:
-            command = {"device_id": 0, "type": TYPE_MSG, "data": user_input}
+            break
 
-        sock.sendto(json.dumps(command).encode('utf-8'), last_rover_addr)
-        print(f">>> Sent: {command}")
-    except KeyboardInterrupt: break
-    except Exception as e: print(f"Error: {e}")
+        try:
+            target_ids = [int(id_str) for id_str in user_input.split()]
+            
+            if not target_ids:
+                print("Input at least 1 device!")
+                continue
+
+            batch_command = []
+            for dev_id in target_ids:
+                cmd_item = {
+                    "device_id": dev_id,
+                    "type": TYPE_NOTI,
+                    "data": "1" 
+                }
+                batch_command.append(cmd_item)
+
+            json_payload = json.dumps(batch_command)
+            sock.sendto(json_payload.encode('utf-8'), last_rover_addr)
+            
+            print(f">>> Payload: {json_payload}")
+
+        except ValueError:
+            single_command = [{
+                "device_id": 0, 
+                "type": TYPE_MSG, 
+                "data": user_input
+            }]
+            sock.sendto(json.dumps(single_command).encode('utf-8'), last_rover_addr)
+            print(f">>> Sent to Base: {user_input}")
+
+    except KeyboardInterrupt: 
+        break
+    except Exception as e: 
+        print(f"Data error: {e}")
