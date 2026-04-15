@@ -137,10 +137,6 @@ uint16_t UART_Read(uint8_t *dest, uint16_t maxlen) {
 extern "C" {
 #endif
 
-// void DMA1_Stream6_IRQHandler(void) {
-//     HAL_DMA_IRQHandler(&hdma_usart2_tx);
-// }
-
 // Ngắt cho DMA RX (Nếu bạn dùng đồng thời)
 void DMA1_Stream5_IRQHandler(void) {
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
