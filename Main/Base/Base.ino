@@ -38,6 +38,7 @@ volatile uint32_t system_ticks = 0;
 
 RF_Rover_Report ROVER_LIST[MAX_ROVER] = {0};
 int8_t ROVER_MODE[MAX_ROVER] = { -1 };
+uint8_t REPEATER_LIST[MAX_REPEATER] = { 0 };
 
 bool is_in_config_mode = false; 
 
@@ -302,6 +303,13 @@ void process_rf_receive()
         else if (temp_rpt.type == TYPE_REPORT_REPEATED)
           SerialLog.println("Repeated!");
 #endif
+        if (temp_rpt.type == TYPE_REPORT_REPEATED) {
+          REPEATER_LIST[temp_rpt.repeater_id - 1] = 1;
+          if (temp_rpt.device_id == 0) {
+            return;
+          }
+        }
+
         if (temp_rpt.typeButton == 1) {
           RF_RTCM_Chunk button_response;
           button_response.device_id = temp_rpt.device_id;
@@ -567,6 +575,15 @@ void send_to_server() {
 
     ROVER_MODE[i] = -1;
   }
+
+  char repeater_buf[32] = {0};
+  for (int i = 0; i < MAX_REPEATER; i++) {
+    snprintf(repeater_buf + strlen(repeater_buf), sizeof(repeater_buf) - strlen(repeater_buf), "%d%s", REPEATER_LIST[i], (i < MAX_REPEATER - 1) ? "-" : "");
+    REPEATER_LIST[i] = 0; // reset
+  }
+  
+  JsonObject obj = dataArray.createNestedObject();
+  obj["repeater_list"] = repeater_buf;
 
   size_t len = serializeJson(doc, buffer, sizeof(buffer));
 

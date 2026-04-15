@@ -74,6 +74,7 @@
 #define SERVER_TIMEOUT_MS 20000
 
 #define MAX_ROVER 5
+#define MAX_REPEATER 5
 
 // LAN
 #define SERVER_PORT 192
@@ -120,6 +121,7 @@ struct RF_Rover_Report {
   uint8_t battery;
   uint8_t modeRTK;
   uint8_t typeButton;
+  uint8_t repeater_id;
 };
 
 struct UDP_Command {

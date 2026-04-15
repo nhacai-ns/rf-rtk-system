@@ -92,6 +92,7 @@ struct RF_Rover_Report {
   uint8_t battery;
   uint8_t modeRTK;
   uint8_t typeButton;
+  uint8_t repeater_id;
 };
 
 enum TYPE_Packet_Enum {
