@@ -13,6 +13,7 @@
 #include <ArduinoJson.h>
 #include <Arduino.h>
 #include <utility/w5100.h>
+#include <deque>
 #include "IWatchdog.h"
 #include "stm32f4xx_hal.h"
 
@@ -55,7 +56,7 @@
 
 #define RF_DATA_RATE RF24_250KBPS // RF24_250KBPS, RF24_1MBPS, RF24_2MBPS
 #define RF_PA RF24_PA_MAX // RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX
-#define RF_CHANNEL 50
+#define RF_CHANNEL 80
 
 #define RTCM_IDLE_GAP_MS 50
 #define RF_RTCM_CHUNK_DATA_SIZE 25
@@ -65,6 +66,7 @@
 #define UDP_PAYLOAD_BUFF_SIZE 256
 #define TX_STORAGE_SIZE 2048 
 #define DMA_TX_TEMP_SIZE    1024  // Buffer tạm cho mỗi lần DMA bắn đi
+#define SERIAL_LOG_BAUDRATE 115200
 
 // timer
 #define STATUS_TIMER TIM3
@@ -88,6 +90,8 @@
 #define CONFIG_TIMEOUT 60000
 
 #define WATCHDOG_TIME 10000000
+
+#define CFG_QUEUE_MAX 10
 
 const uint8_t CLIENT_ADDRESS[] = { 10, 2, 132, 179 };
 // const uint8_t SERVER_ADDRESS[] = { 113, 160, 247, 168 };
@@ -141,6 +145,12 @@ enum TYPE_Packet_Enum {
 enum STATUS_Enum {
   STATUS_DISCONNECT,
   STATUS_CONNECT,
+};
+
+enum CONFIG_STATE {
+  CFG_IDLE,
+  CFG_SEND_CMD,
+  CFG_WAIT_RESP
 };
 
 
