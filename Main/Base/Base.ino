@@ -17,7 +17,8 @@ uint16_t rtcm_length = 0;
 uint8_t batch_id;
 uint32_t start_time = 0;
 
-IPAddress client_address(CLIENT_ADDRESS), server_address(SERVER_ADDRESS), gateway_address(GATEWAY_ADDRESS), subnet_address(SUBNET_ADDRESS), dns_address(DNS_ADDRESS);
+IPAddress client_address(CLIENT_ADDRESS), server_address(SERVER_ADDRESS), gateway_address(GATEWAY_ADDRESS), 
+  subnet_address(SUBNET_ADDRESS), dns_address(DNS_ADDRESS);
 EthernetUDP Udp;
 uint8_t udpSock = 0;
 volatile uint32_t last_udp_healthy = 0;
@@ -74,8 +75,6 @@ void loop() {
 
   check_config_mode();
 
-  // check_config_mode_udp();
-
   if (!is_in_config_mode)
   {
     process_rf_receive();
@@ -118,15 +117,17 @@ void LED_INIT()
   }
 }
 
-
 void RF_Init() {
 
   SerialLog.println("Init RF24...");
 
-  pinMode(RF_SPI_IRQ, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(RF_SPI_IRQ), check_radio_irq, FALLING);
+  pinMode(RF_CE, OUTPUT);
+  digitalWrite(RF_CE, LOW);
   pinMode(RF_CSN, OUTPUT);
   digitalWrite(RF_CSN, HIGH);
+
+  pinMode(RF_SPI_IRQ, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(RF_SPI_IRQ), check_rf_irq, FALLING);
 
   RF_SPI.begin();
   if (!radio.begin(&RF_SPI))
@@ -136,11 +137,9 @@ void RF_Init() {
   radio.setDataRate(RF_DATA_RATE);
   radio.setPALevel(RF_PA);
   radio.setChannel(RF_CHANNEL);
-  // radio.setAutoAck(true);
-  // radio.enableDynamicAck();
   radio.setAutoAck(false);
   radio.setRetries(0, 0);
-  // radio.enableDynamicPayloads();
+  radio.maskIRQ(true, true, false);
 
   radio.openWritingPipe(ADDR_BASE_TO_ALL);
   radio.openReadingPipe(1, ADDR_ROVER_TO_BASE);
@@ -265,74 +264,6 @@ void check_config_mode() {
   }
 }
 
-/*
-void check_config_mode_udp() {
-  int packetSize = Udp.parsePacket();
-  if (packetSize) {
-    char remoteBuffer[128];
-    int len = Udp.read(remoteBuffer, sizeof(remoteBuffer) - 1);
-    if (len <= 0) return;
-    
-    remoteBuffer[len] = '\0';
-    String input = String(remoteBuffer);
-    input.trim();
-
-    // 1. Kiểm tra lệnh bắt đầu Config
-    if (input == CONFIG_START) {
-      is_in_config_mode = true; // Cần khai báo biến toàn cục bool is_in_config_mode
-      Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-      Udp.write("--- ENTERED CONFIG MODE ---\r\n");
-      Udp.endPacket();
-      last_udp_config = millis();
-      return;
-    }
-
-    // 2. Nếu đang trong chế độ Config
-    if (is_in_config_mode) {
-      if (input == CONFIG_END || millis() - last_udp_config > CONFIG_TIMEOUT * 2) {
-        is_in_config_mode = false;
-        Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-        Udp.write("--- EXIT CONFIG MODE ---\r\n");
-        Udp.endPacket();
-        return;
-      }
-
-      // Gửi lệnh nhận được từ UDP sang UM980
-      UART_Write_Queue((uint8_t*)input.c_str(), input.length());
-      UART_Write_Queue((uint8_t*)"\r\n", 2);
-
-      // Đợi phản hồi từ UM980
-      uint32_t start_time = millis();
-      bool is_ok = false;
-      const char* p_match = "OK"; 
-      String full_res = "";
-
-      while (millis() - start_time < CONFIG_TIME_OUT_MS) {
-        UART_DMA_Process_TX();
-        uint8_t c;
-        if (UART_Read(&c, 1) > 0) {
-          full_res += (char)c;
-          if (c == *p_match) {
-            p_match++;
-            if (*p_match == '\0') { is_ok = true; break; }
-          } else { p_match = "OK"; }
-        }
-        yield();
-      }
-
-      // Phản hồi kết quả lại cho Client qua UDP
-      Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-      if (is_ok) {
-        Udp.println("-> UM: " + input + " -> OK");
-      } else {
-        Udp.println("-> UM: " + input + " -> FAIL (Timeout)");
-      }
-      Udp.endPacket();
-    }
-  }
-}
-*/
-
 void check_watch_dog(){
   static uint32_t lastCheck = 0;
 
@@ -347,70 +278,7 @@ void check_watch_dog(){
   rf_ok = false;
 }
 
-bool send_rtk_command(const char* cmd, const char* expected_res, uint32_t timeout_ms) {
-  // 1. Xóa sạch dữ liệu cũ trong bộ đệm nhận trước khi gửi
-  uint8_t dummy[64];
-  while(UART_Read(dummy, sizeof(dummy)) > 0); 
-
-  // 2. Gửi lệnh
-  SerialLog.print("Sending: "); SerialLog.print(cmd);
-  UART_Write_Queue((uint8_t*)cmd, strlen(cmd));
-  UART_Write_Queue((uint8_t*)"\r\n", 2);
-
-  // 3. Đợi phản hồi
-  uint32_t start_time = millis();
-  const char* p_match = expected_res; // Con trỏ theo dõi chuỗi cần tìm
-
-  while (millis() - start_time < timeout_ms) {
-    UART_DMA_Process_TX(); // Duy trì gửi dữ liệu
-
-    uint8_t c;
-    if (UART_Read(&c, 1) > 0) { // Đọc từng byte một
-      // Thuật toán so khớp chuỗi từng ký tự (giúp bỏ qua rác binary)
-      if (c == *p_match) {
-        p_match++;
-        if (*p_match == '\0') { // Đã khớp toàn bộ chuỗi (ví dụ: "OK")
-          SerialLog.println(" -> OK");
-          return true;
-        }
-      } else {
-        p_match = expected_res; // Nếu sai, quay lại tìm từ đầu
-      }
-    }
-    yield();
-  }
-
-  SerialLog.println(" -> TIMEOUT");
-  return false;
-}
-
-void setup_rtk_um980_base() {
-
-  SerialLog.println("--- UM980 Configuration Start ---");
-  delay(2000);
-  if (!send_rtk_command("unlogall", "OK", 500)) {
-    SerialLog.println("UM980 not responding after reset!");
-    // Không nên return ngay, hãy thử tiếp
-  }
-
-  // Lệnh mẫu của UM980
-  send_rtk_command("mode base 16.0973515486 108.07639283873 17.25", "OK", 500);
-
-  // 4. Bật các bản tin RTCM cần thiết (1006, 1074, 1084, 1094, 1124)
-  send_rtk_command("rtcm1006 com1 5", "OK", 500);
-  send_rtk_command("rtcm1033 com1 5", "OK", 500);
-  send_rtk_command("rtcm1074 com1 1", "OK", 500);
-  send_rtk_command("rtcm1084 com1 1", "OK", 500);
-  send_rtk_command("rtcm1094 com1 1", "OK", 500);
-  send_rtk_command("rtcm1124 com1 1", "OK", 500);
-
-  // 5. Lưu cấu hình vào Flash
-  send_rtk_command("saveconfig", "OK", 1000);
-
-  SerialLog.println("--- UM980 Configuration Done ---");
-}
-
-void check_radio_irq()
+void check_rf_irq()
 {
   rf_data_event = true;
 }
@@ -423,12 +291,11 @@ void process_rf_receive()
     radio.whatHappened(tx_ok, tx_fail, rx_ready);
 
     if (rx_ready) {
-      SerialLog.println("Direction!");
       uint8_t limit = 0;
       RF_Rover_Report temp_rpt;
       while (radio.available() && limit < 5) {
         radio.read(&temp_rpt, sizeof(temp_rpt));
-#ifdef DEBUG_
+#ifdef DEBUG
         if (temp_rpt.type == TYPE_REPORT)  {
           SerialLog.println("Direction!");
         }
@@ -707,67 +574,67 @@ void send_to_server() {
   SerialLog.println(buffer);
 #endif
 
-  // if (!lan_ready_flag || len <= 0) { 
-  //   SerialLog.println("Lan_ready_flag failed or buffer length: 0");
-  //   return;
-  // }
+  if (!lan_ready_flag || len <= 0) { 
+    SerialLog.println("Lan_ready_flag failed or buffer length: 0");
+    return;
+  }
 
-  // if (Ethernet.linkStatus() != LinkON)
-  // { 
-  //   SerialLog.println("UDP Link status failed - Skipping send");
-  //   return;
-  // }
+  if (Ethernet.linkStatus() != LinkON)
+  { 
+    SerialLog.println("UDP Link status failed - Skipping send");
+    return;
+  }
 
-  // uint16_t freeSize = getMinTxFree();
+  uint16_t freeSize = getMinTxFree();
 
-  // if (freeSize > 1024) {
-  //   last_udp_healthy = millis();
-  // } 
-  // else {
-  //     if (millis() - last_udp_healthy > 3000) {
-  //         Udp.stop();
-  //         delay(10);
-  //         Udp.begin(LOCAL_PORT);
-  //     }
-  // }
-
-//   if (freeSize < len) {
-// #ifdef DEBUG_
-//       SerialLog.println("TX buffer FULL → drop packet");
-// #endif
-//       return;
-//   }
-
-  // if (Udp.beginPacket(server_address, SERVER_PORT)) {
-  //     Udp.write((uint8_t*)buffer, len);
-  //     Udp.endPacket();
-  // }
-
-  if (lan_ready_flag  &&  len > 0 ) {// &&  server_status == STATUS_CONNECT) {
-    if (Udp.beginPacket(server_address, SERVER_PORT)) {
-      Udp.write((uint8_t*)buffer, len);
-      if (Udp.endPacket() == 0) { 
-#ifdef DEBUG_
-        SerialLog.println("UDP End Packet failed!"); 
-#endif
-      }
-      else { 
-#ifdef DEBUG
-        SerialLog.println("UDP Send success!");
-#endif
-      }
-    } 
-    else { 
-#ifdef DEBUG_
-      SerialLog.println("UDP Begin Packet failed - Skipping send"); 
-#endif
+  if (freeSize > 1024) {
+    last_udp_healthy = millis();
+  } 
+  else {
+    if (millis() - last_udp_healthy > 3000) {
+        Udp.stop();
+        delay(10);
+        Udp.begin(LOCAL_PORT);
     }
   }
-  else { 
+
+  if (freeSize < len) {
 #ifdef DEBUG_
-    SerialLog.println("Lan_ready_flag failed or buffer length is 0"); 
+      SerialLog.println("TX buffer FULL → drop packet");
 #endif
+      return;
   }
+
+  if (Udp.beginPacket(server_address, SERVER_PORT)) {
+      Udp.write((uint8_t*)buffer, len);
+      Udp.endPacket();
+  }
+
+//   if (lan_ready_flag  &&  len > 0 ) {// &&  server_status == STATUS_CONNECT) {
+//     if (Udp.beginPacket(server_address, SERVER_PORT)) {
+//       Udp.write((uint8_t*)buffer, len);
+//       if (Udp.endPacket() == 0) { 
+// #ifdef DEBUG_
+//         SerialLog.println("UDP End Packet failed!"); 
+// #endif
+//       }
+//       else { 
+// #ifdef DEBUG
+//         SerialLog.println("UDP Send success!");
+// #endif
+//       }
+//     } 
+//     else { 
+// #ifdef DEBUG_
+//       SerialLog.println("UDP Begin Packet failed - Skipping send"); 
+// #endif
+//     }
+//   }
+//   else { 
+// #ifdef DEBUG_
+//     SerialLog.println("Lan_ready_flag failed or buffer length is 0"); 
+// #endif
+//   }
   udp_ok = true;
 }
 
@@ -788,7 +655,6 @@ void process_config_mode() {
     while (UART_Read(&c, 1) > 0);
 
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-    Udp.println("--- EXIT CONFIG MODE ---");
     Udp.endPacket();
     
     loop_ok = rf_ok = udp_ok = false;
@@ -906,7 +772,7 @@ void handle_udp() {
     cfg_state = CFG_IDLE;
 
     Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
-    Udp.println("--- ENTERED CONFIG MODE ---");
+    Udp.println("\n--- ENTERED CONFIG MODE ---");
     Udp.endPacket();
 
     last_udp_config = millis();
@@ -917,7 +783,7 @@ void handle_udp() {
     if (input == CONFIG_END) {
       cfg_force_exit = true;
       Udp.beginPacket(cfg_remote_ip, cfg_remote_port);
-      Udp.println("--- EXIT REQUESTED ---");
+      Udp.println("--- EXIT CONFIG MODE (CMD) ---");
       Udp.endPacket();
 
       return;

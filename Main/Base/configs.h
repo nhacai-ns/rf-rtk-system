@@ -77,26 +77,22 @@
 
 // LAN
 #define SERVER_PORT 192
-// #define SERVER_PORT 8001
 #define LOCAL_PORT 8888
 #define LAST_ETH_SEND 20
 
 // config um980
 #define CONFIG_TIME_OUT_MS 500
-#define CONFIG_START "CONFIG"
-#define CONFIG_END "CHECK"
-#define CONFIG_END "DONE"
+#define CONFIG_START "START_CONFIG"
+#define CONFIG_END "END_CONFIG"
 #define CONFIG_OK "OK"
-#define CONFIG_TIMEOUT 60000
+#define CONFIG_TIMEOUT 120000
 
 #define WATCHDOG_TIME 10000000
 
 #define CFG_QUEUE_MAX 10
 
 const uint8_t CLIENT_ADDRESS[] = { 10, 2, 132, 179 };
-// const uint8_t SERVER_ADDRESS[] = { 113, 160, 247, 168 };
 const uint8_t SERVER_ADDRESS[] = { 10, 2, 132, 176 }; 
-// const uint8_t SERVER_ADDRESS[] = { 192, 168, 1, 24 }; 
 
 const uint8_t GATEWAY_ADDRESS[] = { 10, 2, 132, 129 };
 const uint8_t SUBNET_ADDRESS[] =  { 255, 255, 255, 128 };
@@ -116,13 +112,13 @@ struct RF_RTCM_Chunk {
 };
 
 struct RF_Rover_Report {
-  uint8_t device_id;   // ID của Rover
-  uint8_t type;       // 0xB1 (Nhãn nhận diện)
-  uint32_t time;      // Thời gian GPS (HHMMSS)
-  int64_t lat;        // Vĩ độ nhân 10^7
-  int64_t lon;        // Kinh độ nhân 10^7
-  uint8_t battery;    // Phần trăm pin
-  uint8_t modeRTK;    // Chế độ RTK (0, 1, 2, 4, 5...)
+  uint8_t device_id;
+  uint8_t type;
+  uint32_t time;
+  int64_t lat;
+  int64_t lon;
+  uint8_t battery;
+  uint8_t modeRTK;
   uint8_t typeButton;
 };
 

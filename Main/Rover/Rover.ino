@@ -181,10 +181,11 @@ void RF_Init() {
   #ifdef USBCON
     USBDevice.detach();
   #endif
+
   pinMode(RF_CE, OUTPUT);
-  digitalWrite(PA12, LOW);
+  digitalWrite(RF_CE, LOW);
   pinMode(RF_CSN, OUTPUT);
-  digitalWrite(PA11, HIGH);
+  digitalWrite(RF_CSN, HIGH);
 
   pinMode(RF_SPI_IRQ, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RF_SPI_IRQ), check_rf_irq, FALLING);
@@ -201,11 +202,15 @@ void RF_Init() {
   radio.setPALevel(RF_PA);
   radio.setChannel(RF_CHANNEL);
   radio.setAutoAck(false); // Broadcast
+  radio.setRetries(0, 0);
+  radio.maskIRQ(true, true, false);
 
   radio.openReadingPipe(1, ADDR_BASE_TO_ALL);
   radio.openWritingPipe(ADDR_ROVER_TO_BASE);
 
   radio.startListening();
+  
+  SerialLog.println("Done.");
 }
 
 void check_rf_irq()
@@ -561,7 +566,7 @@ void check_battery() {
     SerialLog.print(", soc: "); SerialLog.println(soc); 
 #endif
 
-    current_report.battery = soc;
+    current_report.battery = soc > 100 ? 100 : soc;
   }
 }
 
