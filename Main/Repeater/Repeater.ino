@@ -12,12 +12,8 @@ volatile uint32_t system_ticks = 0;
 
 volatile STATUS_Enum current_status = STATUS_DISCONNECT;
 
-volatile uint8_t reprot_fail_streak = 0;
-uint32_t last_processed_tick = 999999; 
-
 uint32_t last_check_battery = 0;
-
-float battery_voltage = 0, battery_soc = 0;
+uint32_t last_ping = 0;
 
 uint32_t last_rover_msg_ms = 0;
 
@@ -38,7 +34,7 @@ void setup() {
   RF_Init();
   Timer_Init();
 
-  IWatchdog.begin(2000000); // 2s timeout
+  IWatchdog.begin(5000000); // 5s timeout
 
   SerialLog.println("Repeater Inited!");
 }
@@ -47,11 +43,11 @@ void setup() {
 void check_watch_dog(){
   static uint32_t lastCheck = 0;
 
-  if (millis() - lastCheck < 500) return;
+  if (millis() - lastCheck < 1000) return;
   lastCheck = millis();
 
   if (loop_ok && rf_ok) {
-    IWatchdog.reload(); // ✅ feed watchdog
+    IWatchdog.reload(); // feed watchdog
   }
 
   loop_ok = false;
@@ -63,6 +59,12 @@ void loop() {
   loop_ok = true;
 
   process_rf_receive();
+
+  check_rover_connection();
+
+  if (current_status == STATUS_DISCONNECT) {
+    update_ping();
+  }
   
   check_watch_dog();
 }
@@ -71,10 +73,10 @@ void RF_Init() {
   #ifdef USBCON
     USBDevice.detach();
   #endif
-  pinMode(PA12, OUTPUT); // CE
-  digitalWrite(PA12, LOW);
-  pinMode(PA11, OUTPUT); // CSN
-  digitalWrite(PA11, HIGH);
+  pinMode(RF_CE, OUTPUT); // CE
+  digitalWrite(RF_CE, LOW);
+  pinMode(RF_CSN, OUTPUT); // CSN
+  digitalWrite(RF_CSN, HIGH);
 
   pinMode(RF_SPI_IRQ, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RF_SPI_IRQ), check_rf_irq, FALLING);
@@ -91,11 +93,14 @@ void RF_Init() {
   radio.setPALevel(RF_PA);
   radio.setChannel(RF_CHANNEL);
   radio.setAutoAck(false);
+  radio.maskIRQ(true, true, false);
 
   radio.openReadingPipe(1, ADDR_REPEATER);
   radio.openWritingPipe(ADDR_REPEATER);
 
   radio.startListening();
+
+  SerialLog.println("Done.");
 }
 
 void check_rf_irq()
@@ -127,6 +132,7 @@ void process_rf_receive()
 #else
         if (rpt.type == TYPE_REPORT) {
           rpt.type = TYPE_REPORT_REPEATED;
+          rpt.repeater_id = REPEATER_ID;
 #endif 
           radio.stopListening();
           radio.write(&rpt, sizeof(rpt));
@@ -181,5 +187,29 @@ void update_led() {
       digitalWrite(LED_BUILTIN, LOW); break;
     default:
       break;
+  }
+}
+
+void check_rover_connection() {
+  if (millis() - last_rover_msg_ms > 5000) {
+    current_status = STATUS_DISCONNECT;
+  }
+  else
+  {
+    current_status = STATUS_CONNECT;
+  }
+}
+
+void update_ping() {
+  if (millis() - last_ping > 1000)
+  {
+    last_ping = millis();
+    RF_Rover_Report rrr;
+    rrr.device_id = 0;
+    rrr.type = TYPE_REPORT_REPEATED;
+    rrr.repeater_id = REPEATER_ID;
+    radio.stopListening();
+    radio.write(&rrr, sizeof(rrr));
+    radio.startListening();
   }
 }

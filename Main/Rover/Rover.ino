@@ -542,12 +542,19 @@ void Battery_Init() {
   Wire.begin();
 
   Wire.beginTransmission(MAX17048_ADDR);
+  Wire.write(0xFE);   
+  Wire.write(0x54);
+  Wire.write(0x00);
+  Wire.endTransmission();
+  delay(100);
+
+  Wire.beginTransmission(MAX17048_ADDR);
   Wire.write(0x06);   
   Wire.write(0x40);
   Wire.write(0x00);
   Wire.endTransmission();
 
-  delay(100);
+  delay(200);
 }
 
 void check_battery() {
@@ -561,7 +568,7 @@ void check_battery() {
     float voltage = vcell_raw * 78.125e-6;
     float soc = soc_raw / 256.0;
 
-#ifdef DEBUG
+#ifdef DEBUG_
     SerialLog.print("voltage: "); SerialLog.print(voltage); 
     SerialLog.print(", soc: "); SerialLog.println(soc); 
 #endif
@@ -573,10 +580,25 @@ void check_battery() {
 uint16_t read16(uint8_t reg) {
   Wire.beginTransmission(MAX17048_ADDR);
   Wire.write(reg);
-  Wire.endTransmission(false);
-  Wire.requestFrom(MAX17048_ADDR, 2);
 
-  uint16_t value = (Wire.read() << 8) | Wire.read();
+  if (Wire.endTransmission(false) != 0) {
+#ifdef DEBUG_
+    SerialLog.println("I2C TX FAIL");
+#endif
+    return 0xFFFF; // báo lỗi
+  }
 
-  return value;
+  uint8_t bytes = Wire.requestFrom(MAX17048_ADDR, (uint8_t)2);
+
+  if (bytes != 2) {
+#ifdef DEBUG_
+    SerialLog.println("I2C RX FAIL");
+#endif
+    return 0xFFFF;
+  }
+
+  uint8_t msb = Wire.read();
+  uint8_t lsb = Wire.read();
+
+  return (msb << 8) | lsb;
 }

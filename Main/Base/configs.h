@@ -36,6 +36,7 @@
 
 #define W5500_CS PA4
 #define W5500_RST PB0
+#define W5500_VER 0x04
 
 #define LED_STATUS PC14
 #define LED_LAN PC13
@@ -56,7 +57,7 @@
 
 #define RF_DATA_RATE RF24_250KBPS // RF24_250KBPS, RF24_1MBPS, RF24_2MBPS
 #define RF_PA RF24_PA_MAX // RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX
-#define RF_CHANNEL 80
+#define RF_CHANNEL 50
 
 #define RTCM_IDLE_GAP_MS 50
 #define RF_RTCM_CHUNK_DATA_SIZE 25
@@ -74,6 +75,7 @@
 #define SERVER_TIMEOUT_MS 20000
 
 #define MAX_ROVER 5
+#define MAX_REPEATER 5
 
 // LAN
 #define SERVER_PORT 192
@@ -87,7 +89,7 @@
 #define CONFIG_OK "OK"
 #define CONFIG_TIMEOUT 120000
 
-#define WATCHDOG_TIME 10000000
+#define WATCHDOG_TIME 30000000
 
 #define CFG_QUEUE_MAX 10
 
@@ -120,6 +122,7 @@ struct RF_Rover_Report {
   uint8_t battery;
   uint8_t modeRTK;
   uint8_t typeButton;
+  uint8_t repeater_id;
 };
 
 struct UDP_Command {

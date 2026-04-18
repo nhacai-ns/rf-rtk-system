@@ -16,6 +16,7 @@
 // macro 
 #define DEBUG_
 #define ROVER_REPEATER
+#define REPEATER_ID 1
 
 #undef PIN_SPI_MOSI
 #undef PIN_SPI_MISO
@@ -60,14 +61,15 @@ const uint64_t ADDR_REPEATER = 0xAABBCCDD21LL;
 #endif
 
 struct RF_Rover_Report {
-  uint8_t device_id;   // ID của Rover
-  uint8_t type;       // 0xB1 (Nhãn nhận diện)
-  uint32_t time;      // Thời gian GPS (HHMMSS)
-  int64_t lat;        // Vĩ độ nhân 10^7
-  int64_t lon;        // Kinh độ nhân 10^7
-  uint8_t battery;    // Phần trăm pin
-  uint8_t modeRTK;    // Chế độ RTK (0, 1, 2, 4, 5...)
+  uint8_t device_id;
+  uint8_t type;
+  uint32_t time;
+  int64_t lat;
+  int64_t lon;
+  uint8_t battery;
+  uint8_t modeRTK;
   uint8_t typeButton;
+  uint8_t repeater_id;
 };
 
 struct RF_RTCM_Chunk {
