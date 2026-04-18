@@ -17,7 +17,7 @@
 // macro 
 #define DEBUG_
 
-#define DEVICE_ID 4
+#define DEVICE_ID 2
 #define SLOT_STEP_TICKS 1      // ID range 1 tick (100ms)
 #define TOTAL_ROVERS    5     // Rover total
 #define CYCLE_TICKS     (TOTAL_ROVERS * SLOT_STEP_TICKS) // 5 ticks = 500 ms
@@ -41,7 +41,7 @@
 // rf 
 #define RF_DATA_RATE RF24_250KBPS // RF24_250KBPS, RF24_1MBPS, RF24_2MBPS
 #define RF_PA RF24_PA_MIN // RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX
-#define RF_CHANNEL 80
+#define RF_CHANNEL 50
 #define RTCM_IDLE_GAP_MS 50
 #define RF_RTCM_CHUNK_DATA_SIZE 25
 

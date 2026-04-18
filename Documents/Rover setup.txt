@@ -1,0 +1,8 @@
+freset
+mode rover
+gngga 1
+//gngsv 1
+//gngsa 1
+//gpgst 1
+//gnrmc 1
+saveconfig

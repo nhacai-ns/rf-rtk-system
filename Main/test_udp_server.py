@@ -67,48 +67,69 @@ def receive_thread():
             last_rover_addr = addr 
             
             raw_str = data.decode('utf-8', errors='ignore').strip()
-            payload = json.loads(raw_str)
-            
             timestamp = datetime.now().strftime('%H:%M:%S')
 
+            # 🔥 IN RAW PAYLOAD
+            print(f"\n[{timestamp}] RAW from {addr[0]}:")
+            print(raw_str)
+
+            payload = json.loads(raw_str)
+
+            # =====================================================
+            # 📦 BATCH JSON (LIST)
+            # =====================================================
             if isinstance(payload, list):
-                print(f"\n[{timestamp}] Batch Report from {addr[0]} ({len(payload)} rovers):")
+                print(f"[{timestamp}] Batch ({len(payload)} items):")
 
-                for rpt in payload:
-                    r_id = rpt.get("id")
-                    r_lat = rpt.get("lat")
-                    r_lon = rpt.get("lon")
-                    r_bat = rpt.get("battery")
-                    r_mode = rpt.get("modeRTK")
-                    r_btn = rpt.get("typeButton")
+                for item in payload:
 
-                    # update rover status
-                    if r_id is not None:
-                        update_rover(r_id)
+                    # 🔥 CHỈ LỌC JSON CÓ FIELD "id"
+                    if not isinstance(item, dict) or "id" not in item:
+                        continue
 
-                    # get current status
+                    r_id = item.get("id")
+                    r_lat = item.get("lat")
+                    r_lon = item.get("lon")
+                    r_bat = item.get("battery")
+                    r_mode = item.get("modeRTK")
+                    r_btn = item.get("typeButton", 0)
+
+                    # update rover state
+                    update_rover(r_id)
+
                     state = rover_state.get(r_id, "UNKNOWN")
 
-                    status_str = f"ID:{r_id} | Lat:{r_lat} | Lon:{r_lon} | Bat:{r_bat}% | Mode:{r_mode} | State:{state}"
+                    status_str = (
+                        f"ID:{r_id} | Lat:{r_lat} | Lon:{r_lon} | "
+                        f"Bat:{r_bat}% | Mode:{r_mode} | State:{state}"
+                    )
 
                     if r_btn != 0:
-                        status_str += f" | [BUTTON EVENT:{r_btn}]"
+                        status_str += f" | [BUTTON:{r_btn}]"
 
                     print(f" > {status_str}")
-            
+
+            # =====================================================
+            # 📦 SINGLE JSON (DICT)
+            # =====================================================
             elif isinstance(payload, dict):
-                p_type = payload.get("type")
-                if p_type == TYPE_PING:
-                    continue
-                
-                device_id = payload.get("device_id", "Unknown")
-                print(f"\n[{timestamp}] Single Packet from {addr[0]} (Dev {device_id}): {payload}")
+
+                # 🔥 CHỈ xử lý nếu có "id"
+                if "id" not in payload:
+                    print(f"[{timestamp}] Skip non-rover JSON")
+                    return
+
+                r_id = payload.get("id")
+                update_rover(r_id)
+
+                print(f"[{timestamp}] Single Rover:")
+                print(payload)
 
             print("\nEnter number 1 - 5 to notify or message: ", end="", flush=True)
-            
+
         except Exception as e:
             print(f"\n[Parse Error]: {e}")
-
+            
 def ping_loop():
     while True:
         if last_rover_addr:

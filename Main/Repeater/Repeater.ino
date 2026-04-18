@@ -93,6 +93,7 @@ void RF_Init() {
   radio.setPALevel(RF_PA);
   radio.setChannel(RF_CHANNEL);
   radio.setAutoAck(false);
+  radio.maskIRQ(true, true, false);
 
   radio.openReadingPipe(1, ADDR_REPEATER);
   radio.openWritingPipe(ADDR_REPEATER);
