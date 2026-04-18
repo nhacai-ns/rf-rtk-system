@@ -17,7 +17,7 @@
 // macro 
 #define DEBUG_
 
-#define DEVICE_ID 2
+#define DEVICE_ID 5
 #define SLOT_STEP_TICKS 1      // ID range 1 tick (100ms)
 #define TOTAL_ROVERS    5     // Rover total
 #define CYCLE_TICKS     (TOTAL_ROVERS * SLOT_STEP_TICKS) // 5 ticks = 500 ms

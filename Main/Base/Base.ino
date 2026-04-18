@@ -96,7 +96,8 @@ void loop() {
     //on_server_cmd();
   handle_udp();
 #endif
-
+  rf_ok = radio.isChipConnected();
+  
   check_watch_dog();
 }
 
@@ -305,8 +306,9 @@ void process_rf_receive()
           SerialLog.println("Repeated!");
 #endif
         if (temp_rpt.type == TYPE_REPORT_REPEATED) {
-          REPEATER_LIST[temp_rpt.repeater_id - 1] = 1;
-          REPEATER_LAST_SEEN[temp_rpt.repeater_id - 1] = millis();
+          uint8_t repeater_id = temp_rpt.repeater_id - 1;
+          REPEATER_LIST[repeater_id] = 1;
+          REPEATER_LAST_SEEN[repeater_id] = millis();
           if (temp_rpt.device_id == 0) {
             return;
           }
@@ -325,9 +327,9 @@ void process_rf_receive()
           send_to_server();
         }
 
-        uint8_t current_id = temp_rpt.device_id - 1;
-        memcpy(&ROVER_LIST[current_id], &temp_rpt, sizeof(RF_Rover_Report));
-        ROVER_MODE[current_id] = temp_rpt.modeRTK;
+        uint8_t current_index = temp_rpt.device_id - 1;
+        memcpy(&ROVER_LIST[current_index], &temp_rpt, sizeof(RF_Rover_Report));
+        ROVER_MODE[current_index] = temp_rpt.modeRTK;
         limit++;
       }
 
@@ -339,7 +341,6 @@ void process_rf_receive()
     // use with ack
     if (tx_ok) { }
   }
-  rf_ok = true;
 }
 
 void get_and_aggregate_rtcm()

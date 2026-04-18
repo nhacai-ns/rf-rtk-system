@@ -568,7 +568,7 @@ void check_battery() {
     float voltage = vcell_raw * 78.125e-6;
     float soc = soc_raw / 256.0;
 
-#ifdef DEBUG_
+#ifdef DEBUG
     SerialLog.print("voltage: "); SerialLog.print(voltage); 
     SerialLog.print(", soc: "); SerialLog.println(soc); 
 #endif
@@ -582,7 +582,7 @@ uint16_t read16(uint8_t reg) {
   Wire.write(reg);
 
   if (Wire.endTransmission(false) != 0) {
-#ifdef DEBUG_
+#ifdef DEBUG
     SerialLog.println("I2C TX FAIL");
 #endif
     return 0xFFFF; // báo lỗi
@@ -591,7 +591,7 @@ uint16_t read16(uint8_t reg) {
   uint8_t bytes = Wire.requestFrom(MAX17048_ADDR, (uint8_t)2);
 
   if (bytes != 2) {
-#ifdef DEBUG_
+#ifdef DEBUG
     SerialLog.println("I2C RX FAIL");
 #endif
     return 0xFFFF;

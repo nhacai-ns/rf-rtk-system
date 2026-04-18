@@ -34,7 +34,7 @@ void setup() {
   RF_Init();
   Timer_Init();
 
-  IWatchdog.begin(5000000); // 5s timeout
+  IWatchdog.begin(WATCHDOG_TIME); // 5s timeout
 
   SerialLog.println("Repeater Inited!");
 }
@@ -65,7 +65,9 @@ void loop() {
   if (current_status == STATUS_DISCONNECT) {
     update_ping();
   }
-  
+
+  rf_ok = radio.isChipConnected();
+
   check_watch_dog();
 }
 
@@ -128,36 +130,38 @@ void process_rf_receive()
         radio.read(&rpt, sizeof(rpt));
 #ifdef BASE_REPEATER
         if (rpt.type == TYPE_RTCM) {
-          rpt.type = TYPE_RTCM_REPEATED; 
+          rpt.type = TYPE_RTCM_REPEATED;
+        }
 #else
         if (rpt.type == TYPE_REPORT) {
           rpt.type = TYPE_REPORT_REPEATED;
           rpt.repeater_id = REPEATER_ID;
+        }
 #endif 
-          radio.stopListening();
-          radio.write(&rpt, sizeof(rpt));
-          radio.startListening();
+        radio.stopListening();
+        radio.write(&rpt, sizeof(rpt));
+        radio.startListening();
 
 #ifdef BASE_REPEATER
-          SerialLog.print(", batch_id: ");
-          SerialLog.print(rpt.batch_id);
-          SerialLog.print(", seq: ");
-          SerialLog.print(rpt.seq);
+        SerialLog.print(", batch_id: ");
+        SerialLog.print(rpt.batch_id);
+        SerialLog.print(", seq: ");
+        SerialLog.print(rpt.seq);
 #else
-          SerialLog.print("Repeated Rover ID: ");
-          SerialLog.print(rpt.device_id);
+        SerialLog.print("Repeated Rover ID: ");
+        SerialLog.print(rpt.device_id);
 #endif
-          SerialLog.println();
-        }
+        SerialLog.println();
         limit++;
       }
-      last_rover_msg_ms = millis();                                                                                                     
+      last_rover_msg_ms = millis();
     }
 
     if (tx_fail) { radio.flush_tx(); }
 
     if (tx_ok) {}
   }
+  
   rf_ok = true;
 }
 
