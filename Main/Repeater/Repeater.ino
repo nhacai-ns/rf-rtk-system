@@ -128,17 +128,25 @@ void process_rf_receive()
       uint8_t limit = 0;
       while (radio.available() && limit < 5) {
         radio.read(&rpt, sizeof(rpt));
+
 #ifdef BASE_REPEATER
         if (rpt.type == TYPE_RTCM) {
           rpt.type = TYPE_RTCM_REPEATED;
         }
 #else
+        if (rpt.type == TYPE_REPORT_REPEATED) {
+          continue; 
+        }
+
         if (rpt.type == TYPE_REPORT) {
+          last_rover_msg_ms = millis();
           rpt.type = TYPE_REPORT_REPEATED;
           rpt.repeater_id = REPEATER_ID;
         }
 #endif 
+
         radio.stopListening();
+        delay(random(5, 30));   // thay delay(REPEATER_ID)
         radio.write(&rpt, sizeof(rpt));
         radio.startListening();
 
@@ -154,7 +162,6 @@ void process_rf_receive()
         SerialLog.println();
         limit++;
       }
-      last_rover_msg_ms = millis();
     }
 
     if (tx_fail) { radio.flush_tx(); }
@@ -195,7 +202,7 @@ void update_led() {
 }
 
 void check_rover_connection() {
-  if (millis() - last_rover_msg_ms > 5000) {
+  if (millis() - last_rover_msg_ms > REPEATER_PING_TIMEOUT) {
     current_status = STATUS_DISCONNECT;
   }
   else
@@ -204,14 +211,20 @@ void check_rover_connection() {
   }
 }
 
-void update_ping() {
-  if (millis() - last_ping > 1000)
+void update_ping() {  
+  uint32_t now = millis();
+  uint32_t current_cycle_tick = (REPEATER_ID - 1) * 50;
+  uint32_t last_current_cycle_tick = 2000 + current_cycle_tick;
+  static uint32_t packet_id = 0;
+
+  if (now - last_ping > last_current_cycle_tick)
   {
-    last_ping = millis();
+    last_ping = now;
     RF_Rover_Report rrr;
     rrr.device_id = 0;
     rrr.type = TYPE_REPORT_REPEATED;
     rrr.repeater_id = REPEATER_ID;
+    rrr.battery = packet_id++;
     radio.stopListening();
     radio.write(&rrr, sizeof(rrr));
     radio.startListening();

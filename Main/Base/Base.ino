@@ -32,6 +32,7 @@ volatile STATUS_Enum server_status = STATUS_CONNECT;
 volatile STATUS_Enum rover_status = STATUS_CONNECT;
 volatile uint32_t last_rover_msg_ms = 0;
 volatile uint32_t last_server_ping_ms = 0;
+volatile bool clear_rf_flag = false;
 
 HardwareTimer *StatusTimer;
 volatile uint32_t system_ticks = 0;
@@ -88,12 +89,15 @@ void loop() {
     send_report_to_server();
 
     check_connection_status();
+  
+    rf_auto_recover();
   }
   else {
     process_config_mode();
   }
+
 #ifdef LAN
-    //on_server_cmd();
+    //on_server_cmd();`
   handle_udp();
 #endif
   rf_ok = radio.isChipConnected();
@@ -216,7 +220,7 @@ void check_config_mode() {
       SerialLog.println("\n--- CONFIG MODE, input 'DONE' to exit ---");
       uint32_t last_serial_config = millis();
 
-      while (true || millis() - last_serial_config > CONFIG_TIMEOUT) { // Vòng lặp cấu hình riêng biệt
+      while (true || millis() - last_serial_config > CONFIG_TIMEOUT) {
 
         loop_ok = rf_ok = udp_ok = true;
         check_watch_dog();
@@ -286,61 +290,190 @@ void check_rf_irq()
   rf_data_event = true;
 }
 
+volatile 
+
+// void process_rf_receive()
+// {
+//   if (rf_data_event) {
+//     rf_data_event = false;
+//     bool tx_ok, tx_fail, rx_ready;
+//     radio.whatHappened(tx_ok, tx_fail, rx_ready);
+  
+//     if (rx_ready) {
+//       if (rx_ready && !radio.available()) {
+//         SerialLog.println("⚠ IRQ stuck detected");
+//       // radio.flush_rx();
+
+//       // radio.stopListening();
+//       // delay(2);
+//       // radio.startListening();
+//       }
+//       // uint8_t limit = 0;
+
+//       RF_Rover_Report temp_rpt;
+//       while (radio.available()) {
+//         radio.read(&temp_rpt, sizeof(temp_rpt));
+// #ifdef DEBUG_
+//         if (temp_rpt.type == TYPE_REPORT)  {
+//           SerialLog.print("id: "); SerialLog.print(temp_rpt.device_id);
+//           SerialLog.println(" - Direction!");
+//         }
+//         else if (temp_rpt.type == TYPE_REPORT_REPEATED) {
+//           SerialLog.print("id repeater: "); SerialLog.print(temp_rpt.repeater_id);
+//           SerialLog.println(" - Repeated!");
+//         }
+// #endif
+//         if (temp_rpt.type == TYPE_REPORT_REPEATED) {
+
+//           uint8_t repeater_id = temp_rpt.repeater_id - 1;
+//           REPEATER_LIST[repeater_id] = 1;
+//           REPEATER_LAST_SEEN[repeater_id] = millis();
+//           if (temp_rpt.device_id == 0) {
+//             return;
+//           }
+//         }
+
+//         if (temp_rpt.typeButton == 1) {
+//           RF_RTCM_Chunk button_response;
+//           button_response.device_id = temp_rpt.device_id;
+//           button_response.type = TYPE_BUTTON_PRESSED;
+//           button_response.batch_id = 0;
+//           button_response.seq = 0;
+//           button_response.total = 1;
+
+//           send_single_to_rover(button_response);
+
+//           send_to_server();
+//         }
+
+//         uint8_t current_index = temp_rpt.device_id - 1;
+//         memcpy(&ROVER_LIST[current_index], &temp_rpt, sizeof(RF_Rover_Report));
+//         ROVER_MODE[current_index] = temp_rpt.modeRTK;
+//         // limit++;
+//       }
+
+//       last_rover_msg_ms = millis();
+      
+//       // test recovery rf
+//       REPEATER_LIST[2] = 0;
+//       REPEATER_LIST[3] = 0;
+//       REPEATER_LIST[4] = 0;
+//     }
+
+//     // use with ack
+//     if (tx_fail) { radio.flush_tx(); }
+//     // use with ack
+//     if (tx_ok) { }
+//   }
+// }
+
 void process_rf_receive()
 {
-  if (rf_data_event) {
-    rf_data_event = false;
-    bool tx_ok, tx_fail, rx_ready;
-    radio.whatHappened(tx_ok, tx_fail, rx_ready);
+  if (!rf_data_event) return;
+  rf_data_event = false;
 
-    if (rx_ready) {
-      uint8_t limit = 0;
-      RF_Rover_Report temp_rpt;
-      while (radio.available() && limit < 5) {
-        radio.read(&temp_rpt, sizeof(temp_rpt));
-#ifdef DEBUG
-        if (temp_rpt.type == TYPE_REPORT)  {
-          SerialLog.println("Direction!");
-        }
-        else if (temp_rpt.type == TYPE_REPORT_REPEATED)
-          SerialLog.println("Repeated!");
+  bool tx_ok, tx_fail, rx_ready;
+  radio.whatHappened(tx_ok, tx_fail, rx_ready);
+
+  if (rx_ready) {
+
+    RF_Rover_Report temp_rpt;
+    uint8_t safety = 0;
+    SerialLog.println("⚠ Rx Ready");  
+
+    while (radio.available()) {
+
+      radio.read(&temp_rpt, sizeof(temp_rpt));
+      safety++;
+
+#ifdef DEBUG_
+      SerialLog.print("type: ");
+      SerialLog.print(temp_rpt.type);
+      SerialLog.print("packet_id: ");
+      SerialLog.print(temp_rpt.battery);
+      SerialLog.print(", repeater id: ");
+      SerialLog.println(temp_rpt.repeater_id);
 #endif
-        if (temp_rpt.type == TYPE_REPORT_REPEATED) {
-          uint8_t repeater_id = temp_rpt.repeater_id - 1;
-          REPEATER_LIST[repeater_id] = 1;
-          REPEATER_LAST_SEEN[repeater_id] = millis();
-          if (temp_rpt.device_id == 0) {
-            return;
-          }
+
+      if (temp_rpt.type == TYPE_REPORT_REPEATED) {
+
+        uint8_t repeater_id = temp_rpt.repeater_id - 1;
+        REPEATER_LIST[repeater_id] = 1;
+        REPEATER_LAST_SEEN[repeater_id] = millis();
+
+        // 👉 repeater ping
+        if (temp_rpt.device_id == 0) {
+          continue;  // ❗ KHÔNG return
         }
-
-        if (temp_rpt.typeButton == 1) {
-          RF_RTCM_Chunk button_response;
-          button_response.device_id = temp_rpt.device_id;
-          button_response.type = TYPE_BUTTON_PRESSED;
-          button_response.batch_id = 0;
-          button_response.seq = 0;
-          button_response.total = 1;
-
-          send_single_to_rover(button_response);
-
-          send_to_server();
-        }
-
-        uint8_t current_index = temp_rpt.device_id - 1;
-        memcpy(&ROVER_LIST[current_index], &temp_rpt, sizeof(RF_Rover_Report));
-        ROVER_MODE[current_index] = temp_rpt.modeRTK;
-        limit++;
       }
 
-      last_rover_msg_ms = millis();
+      // 👉 button
+      if (temp_rpt.typeButton == 1) {
+        RF_RTCM_Chunk button_response;
+        button_response.device_id = temp_rpt.device_id;
+        button_response.type = TYPE_BUTTON_PRESSED;
+        button_response.batch_id = 0;
+        button_response.seq = 0;
+        button_response.total = 1;
+
+        send_single_to_rover(button_response);
+        send_to_server();
+      }
+
+      // 👉 lưu rover
+      uint8_t idx = temp_rpt.device_id - 1;
+      memcpy(&ROVER_LIST[idx], &temp_rpt, sizeof(RF_Rover_Report));
+      ROVER_MODE[idx] = temp_rpt.modeRTK;
+
+      if (safety > 10) {
+        SerialLog.println("⚠ FIFO overflow → flush");
+        radio.flush_rx();
+        break;
+      }
     }
 
-    // use with ack
-    if (tx_fail) { radio.flush_tx(); }
-    // use with ack
-    if (tx_ok) { }
+    last_rover_msg_ms = millis();
   }
+
+  if (tx_fail) radio.flush_tx();
+}
+
+void rf_auto_recover() {
+  static uint32_t last_recover = 0;
+
+  if (millis() - last_rover_msg_ms < 5000) return;
+
+  if (millis() - last_recover < 5000) return;
+
+  last_recover = millis();
+
+  static uint8_t level = 0;
+  // test recovery rf
+  if (level == 0) {
+    REPEATER_LIST[2] = 1;
+    SerialLog.println("RF flush recover");
+    radio.stopListening();
+    radio.flush_rx();
+    radio.flush_tx();
+    radio.startListening();
+  }
+  else if (level == 1) {
+    REPEATER_LIST[3] = 1;
+    SerialLog.println("RF power cycle");
+    radio.powerDown();
+    delay(5);
+    radio.powerUp();
+    delay(5);
+    radio.startListening();
+  }
+  else {
+    REPEATER_LIST[4] = 1;
+    SerialLog.println("RF full reinit");
+    RF_Init();
+  }
+
+  level++;
+  if (level > 2) level = 2;
 }
 
 void get_and_aggregate_rtcm()
@@ -580,7 +713,7 @@ void send_to_server() {
   }
 
   for (int i = 0; i < MAX_REPEATER; i++) {
-    if (millis() - REPEATER_LAST_SEEN[i] > 5000) {
+    if (millis() - REPEATER_LAST_SEEN[i] > REPEATER_PING_TIMEOUT) {
       REPEATER_LIST[i] = 0;
     }
   }
