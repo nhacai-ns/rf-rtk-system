@@ -17,9 +17,8 @@
 #include "IWatchdog.h"
 #include "stm32f4xx_hal.h"
 
-// macro 
+// macro, có "_" phía sau tương đương với việc không được bật
 #define DEBUG_
-#define CONFIG_RTK
 #define LAN
 #define ACK_
 

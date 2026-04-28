@@ -51,24 +51,33 @@ void setup() {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); 
   }
 
-  RF_Init();
+  RF_INIT();
   UART_DMA_Init();
-  Buzzer_Init();
-  Timer_Init();
-  Button_Init();
-  Battery_Init();
+  BUZZER_INIT();
+  TIMER_INIT();
+  BUTTON_INIT();
+  BATTERY_INIT();
   
-  SerialLog.println("Inited!");
+  SerialLog.println("Device Ready!");
 }
 
 void loop() {
   
+  // kiểm tra % pin thiết bị
   check_battery();
 
   if (current_status != STATUS_LOW_BATTERRY) {
+    /* hoạt động ở chế độ normal, lần lượt như sau:
+      1: trigger khi nút nhấn chức năng được bật
+      2: nhận polling rf (dữ liệu rtcm từ base) 
+      3: kiểm tra connection với base (nếu không nhận rtcm sau RTCM_TIMEOUT_SEC == disconnected)
+      4: xử lý dữ liệu GGA và lưu trữ vào thông tin hiện tại
+      5: kiểm tra nếu có dữ liệu trong bộ đệm dma tx uart thì gửi qua uart
+      6: gửi dữ liệu thông tin rover về base
+    */
     trigger_button();
 
-    process_rf_receive();
+    process_rf_receiver();
     
     check_rtcm_connection();
 
@@ -80,15 +89,16 @@ void loop() {
   }
   else
   {
+    // hoạt động cảnh báo pin yếu khi còn < 5% pin, đèn nháy nhanh kết hợp bíp chu kì 1s
     if (millis() - last_low_battery_beep > LAST_CHECK_BATTERY) {
       last_low_battery_beep = millis();
       trigger_buzzer(1, BUZZER_NOTI_FREQ);
     }
   }
 
-  update_status_logic();
+  update_current_status();
 
-  // switch to default base
+  // sử dụng trong trường hợp dự phòng dùng 2 base, reset về base về id 0
   if (millis() - last_rf_rx_ms > LAST_BASE_TIMEOUT)
   {
     current_base = 0;
@@ -121,7 +131,7 @@ void check_rtcm_connection() {
   }
 }
 
-void update_status_logic() {
+void update_current_status() {
   if (current_report.battery < LOW_BATTERY_THRESHOLD) { 
     current_status = STATUS_LOW_BATTERRY;
   }
@@ -177,7 +187,7 @@ void test_buzzer() {
   }
 }
 
-void RF_Init() {
+void RF_INIT() {
   #ifdef USBCON
     USBDevice.detach();
   #endif
@@ -218,7 +228,7 @@ void check_rf_irq()
   rf_data_event = true;
 }
 
-void process_rf_receive()
+void process_rf_receiver()
 {
   if (rf_data_event) {
     rf_data_event = false;
@@ -401,7 +411,7 @@ void parse_gga(char *nmeastr) {
 #endif
 }
 
-void Timer_Init()
+void TIMER_INIT()
 {
   StatusTimer = new HardwareTimer(STATUS_TIMER);
   StatusTimer->pause();
@@ -451,20 +461,22 @@ void update_led() {
   }
 }
 
-void Buzzer_Init(){
+void BUZZER_INIT(){
   // use IO
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW); 
 
-  // use PWM
-  // PinName p = digitalPinToPinName(BUZZER_PIN);
-  // buzzer_channel = STM_PIN_CHANNEL(pinmap_function(p, PinMap_PWM));
-  // BuzzerTimer = new HardwareTimer(BUZZER_TIMER); 
-  // BuzzerTimer->pause();
-  // BuzzerTimer->setMode(buzzer_channel, TIMER_OUTPUT_COMPARE_PWM1, BUZZER_PIN);
-  // BuzzerTimer->setCaptureCompare(buzzer_channel, 50, PERCENT_COMPARE_FORMAT); 
-  // HAL_NVIC_SetPriority(TIM4_IRQn, 15, 0); 
-  // BuzzerTimer->pause();
+  // if use PWM
+  /*
+    PinName p = digitalPinToPinName(BUZZER_PIN);
+    buzzer_channel = STM_PIN_CHANNEL(pinmap_function(p, PinMap_PWM));
+    BuzzerTimer = new HardwareTimer(BUZZER_TIMER); 
+    BuzzerTimer->pause();
+    BuzzerTimer->setMode(buzzer_channel, TIMER_OUTPUT_COMPARE_PWM1, BUZZER_PIN);
+    BuzzerTimer->setCaptureCompare(buzzer_channel, 50, PERCENT_COMPARE_FORMAT); 
+    HAL_NVIC_SetPriority(TIM4_IRQn, 15, 0); 
+    BuzzerTimer->pause();
+  */
 }
 
 void trigger_buzzer(int beeps, int freq) {
@@ -474,25 +486,27 @@ void trigger_buzzer(int beeps, int freq) {
   interrupts();
 }
 
-void Button_Init() {
+void BUTTON_INIT() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   // use interrupt with != EXIT8
   // attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), button_callback, FALLING);
 }
 
-// void button_callback() {  
-//   uint32_t now = millis();
-//   if (now - last_debounce_time > MAX_DEBOUNCE_TIME) {
-//     if (!button_waiting_ack) { 
-//       button_pressed = true;
-//       button_pressed_limit = MAX_BUTTON_RETRY; 
-//       button_waiting_ack = true;
-//       trigger_buzzer(1, BUZZER_NOTI_FREQ);  
-//       digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-//     }
-//     last_debounce_time = now;  
-//   }
-// }
+/*
+void button_callback() {  
+  uint32_t now = millis();
+  if (now - last_debounce_time > MAX_DEBOUNCE_TIME) {
+    if (!button_waiting_ack) { 
+      button_pressed = true;
+      button_pressed_limit = MAX_BUTTON_RETRY; 
+      button_waiting_ack = true;
+      trigger_buzzer(1, BUZZER_NOTI_FREQ);  
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    }
+    last_debounce_time = now;  
+  }
+}
+*/
 
 void trigger_button() {
   uint32_t now = millis();
@@ -536,7 +550,7 @@ void trigger_button() {
   }
 }
 
-void Battery_Init() {
+void BATTERY_INIT() {
   Wire.setSCL(SCL_PIN);
   Wire.setSDA(SDA_PIN);
   Wire.begin();

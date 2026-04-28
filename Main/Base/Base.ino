@@ -61,7 +61,7 @@ void setup() {
   ROVERS_INIT();  
   LED_INIT();
   UART_DMA_Init();
-  Timer_Init();
+  TIMER_INIT();
   RF_Init();
 #ifdef LAN
   LAN_Init();
@@ -76,11 +76,20 @@ void loop() {
 
   loop_ok = true;
 
-  check_config_mode();
+  // hoạt động ở chế độ cấu hình qua cổng serial debug
+  check_serial_config_mode();
 
   if (!is_in_config_mode)
   {
-    process_rf_receive();
+    /* hoạt động ở chế độ normal, lần lượt như sau:
+      1: nhận polling rf (thông tin rover)
+      2: lấy và ghép nối rtcm từ dma uart
+      3: xử lý việc gửi rtcm ở trong bộ đệm ring buffer
+      4: gửi dữ liệu đến udp server
+      5: kiểm tra các connection bao gồm rover và tín hiệu ping từ server
+      6: cơ chế tự flush fifo của rf và re-init rf khi bị nghẽn cờ ngắt irq 
+    */
+    process_rf_receiver();
 
     get_and_aggregate_rtcm();
 
@@ -93,15 +102,18 @@ void loop() {
     rf_auto_recover();
   }
   else {
-    process_config_mode();
+    // hoạt động ở chế độ cấu hình qua LAN
+    process_lan_config_mode();
   }
 
+  // handle dữ liệu được trả về từ server
 #ifdef LAN
-    //on_server_cmd();`
   handle_udp();
 #endif
+  // cờ reset watch của task rf
   rf_ok = radio.isChipConnected();
   
+  // kiểm tra và reload watchdog, nếu không sẽ đếm timeout để reset
   check_watch_dog();
 }
 
@@ -211,7 +223,7 @@ uint8_t readW5500Version() {
   return version;
 }
 
-void check_config_mode() {
+void check_serial_config_mode() {
   if (SerialLog.available()) {
     String input = SerialLog.readStringUntil('\n');
     input.trim();
@@ -278,7 +290,7 @@ void check_watch_dog(){
   lastCheck = millis();
 
   if (loop_ok && rf_ok) {
-    IWatchdog.reload(); // ✅ feed watchdog
+    IWatchdog.reload(); // feed watchdog
   }
 
   loop_ok = false;
@@ -290,84 +302,7 @@ void check_rf_irq()
   rf_data_event = true;
 }
 
-volatile 
-
-// void process_rf_receive()
-// {
-//   if (rf_data_event) {
-//     rf_data_event = false;
-//     bool tx_ok, tx_fail, rx_ready;
-//     radio.whatHappened(tx_ok, tx_fail, rx_ready);
-  
-//     if (rx_ready) {
-//       if (rx_ready && !radio.available()) {
-//         SerialLog.println("⚠ IRQ stuck detected");
-//       // radio.flush_rx();
-
-//       // radio.stopListening();
-//       // delay(2);
-//       // radio.startListening();
-//       }
-//       // uint8_t limit = 0;
-
-//       RF_Rover_Report temp_rpt;
-//       while (radio.available()) {
-//         radio.read(&temp_rpt, sizeof(temp_rpt));
-// #ifdef DEBUG_
-//         if (temp_rpt.type == TYPE_REPORT)  {
-//           SerialLog.print("id: "); SerialLog.print(temp_rpt.device_id);
-//           SerialLog.println(" - Direction!");
-//         }
-//         else if (temp_rpt.type == TYPE_REPORT_REPEATED) {
-//           SerialLog.print("id repeater: "); SerialLog.print(temp_rpt.repeater_id);
-//           SerialLog.println(" - Repeated!");
-//         }
-// #endif
-//         if (temp_rpt.type == TYPE_REPORT_REPEATED) {
-
-//           uint8_t repeater_id = temp_rpt.repeater_id - 1;
-//           REPEATER_LIST[repeater_id] = 1;
-//           REPEATER_LAST_SEEN[repeater_id] = millis();
-//           if (temp_rpt.device_id == 0) {
-//             return;
-//           }
-//         }
-
-//         if (temp_rpt.typeButton == 1) {
-//           RF_RTCM_Chunk button_response;
-//           button_response.device_id = temp_rpt.device_id;
-//           button_response.type = TYPE_BUTTON_PRESSED;
-//           button_response.batch_id = 0;
-//           button_response.seq = 0;
-//           button_response.total = 1;
-
-//           send_single_to_rover(button_response);
-
-//           send_to_server();
-//         }
-
-//         uint8_t current_index = temp_rpt.device_id - 1;
-//         memcpy(&ROVER_LIST[current_index], &temp_rpt, sizeof(RF_Rover_Report));
-//         ROVER_MODE[current_index] = temp_rpt.modeRTK;
-//         // limit++;
-//       }
-
-//       last_rover_msg_ms = millis();
-      
-//       // test recovery rf
-//       REPEATER_LIST[2] = 0;
-//       REPEATER_LIST[3] = 0;
-//       REPEATER_LIST[4] = 0;
-//     }
-
-//     // use with ack
-//     if (tx_fail) { radio.flush_tx(); }
-//     // use with ack
-//     if (tx_ok) { }
-//   }
-// }
-
-void process_rf_receive()
+void process_rf_receiver()
 {
   if (!rf_data_event) return;
   rf_data_event = false;
@@ -379,7 +314,9 @@ void process_rf_receive()
 
     RF_Rover_Report temp_rpt;
     uint8_t safety = 0;
+#ifdef DEBUG
     SerialLog.println("⚠ Rx Ready");  
+#endif
 
     while (radio.available()) {
 
@@ -403,7 +340,7 @@ void process_rf_receive()
 
         // 👉 repeater ping
         if (temp_rpt.device_id == 0) {
-          continue;  // ❗ KHÔNG return
+          continue;
         }
       }
 
@@ -797,7 +734,7 @@ void send_to_server() {
   udp_ok = true;
 }
 
-void process_config_mode() {
+void process_lan_config_mode() {
   loop_ok = rf_ok = udp_ok = true;
   check_watch_dog();
 
@@ -1001,53 +938,7 @@ void handle_udp() {
   }
 }
 
-/*
-void on_server_cmd() {
-  int packetSize = Udp.parsePacket();
-  if (packetSize) {
-    char remoteBuffer[128]; // Buffer đủ dùng cho JSON ngắn
-    int len = Udp.read(remoteBuffer, sizeof(remoteBuffer) - 1);
-
-    if (len > 0) {
-      remoteBuffer[len] = '\0';
-
-#ifdef DEBUG_
-      SerialLog.print("LAN cmd: ");
-      SerialLog.println(remoteBuffer);
-#endif
-
-      JsonDocument doc;
-      DeserializationError error = deserializeJson(doc, remoteBuffer);
-      
-      JsonArray cmd_list = doc.as<JsonArray>();
-
-      for (JsonObject item : cmd_list) {
-        int type = item["type"];
-        int dev_id = item["device_id"];
-
-        switch (type) {
-          case TYPE_NOTI: {
-            RF_RTCM_Chunk rf_pkt;
-            rf_pkt.device_id = dev_id;
-            rf_pkt.type = TYPE_NOTI;
-            rf_pkt.batch_id = 1;
-            rf_pkt.seq = 0;
-            rf_pkt.total = 1;
-            rf_pkt.data[0] = 1; 
-            send_single_to_rover(rf_pkt); break;
-          }
-          case TYPE_PING:
-            last_server_ping_ms = millis(); break;
-          default: break;
-        }
-        delayMicroseconds(DELAY_CHUNK_MICRO);
-      }
-    }
-  }
-}
-*/
-
-void Timer_Init() {
+void TIMER_INIT() {
   StatusTimer = new HardwareTimer(STATUS_TIMER);
   StatusTimer->pause();
   StatusTimer->setOverflow(10, HERTZ_FORMAT);
